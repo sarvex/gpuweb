@@ -26,14 +26,15 @@ class Options():
         self.verbose = False
 
     def __str__(self):
-        parts = []
-        parts.append("script = {}".format(self.script))
-        parts.append("bs_filename = {}".format(self.bs_filename))
-        parts.append("grammar_dir = {}".format(self.grammar_dir))
-        parts.append("grammar_filename = {}".format(self.grammar_filename))
-        parts.append("scanner_cc_filename = {}".format(self.scanner_cc_filename))
-        parts.append("wgsl_shared_lib = {}".format(self.wgsl_shared_lib))
-        return "Options({})".format(",".join(parts))
+        parts = [
+            f"script = {self.script}",
+            f"bs_filename = {self.bs_filename}",
+            f"grammar_dir = {self.grammar_dir}",
+            f"grammar_filename = {self.grammar_filename}",
+            f"scanner_cc_filename = {self.scanner_cc_filename}",
+            f"wgsl_shared_lib = {self.wgsl_shared_lib}",
+        ]
+        return f'Options({",".join(parts)})'
 
 def newer_than(first,second):
     """
@@ -41,7 +42,7 @@ def newer_than(first,second):
     or if 'second' does not exist
     """
     if not os.path.exists(first):
-        raise Exception("Missing file {}".format(first))
+        raise Exception(f"Missing file {first}")
     if not os.path.exists(second):
         return True
     first_time = os.path.getmtime(first)
@@ -61,9 +62,8 @@ def read_lines_from_file(filename, exclusions):
     result = []
     include_re = re.compile('path:\s+(\S+)')
     for line in parts:
-        m = include_re.match(line)
-        if m:
-            included_file = m.group(1)
+        if m := include_re.match(line):
+            included_file = m[1]
             if included_file not in exclusions:
                 result.extend(read_lines_from_file(included_file, exclusions))
                 continue
@@ -211,9 +211,7 @@ class scanner_example(Scanner):
     def begin(lines, i):
         line = lines[i].split("//")[0].rstrip()
         result = "<div class=" in line and "example" in line and "wgsl" in line
-        key = None
-        if result:
-            key = line[5:-1]
+        key = line[5:-1] if result else None
         return (result, key, 1)
 
     @staticmethod
@@ -289,21 +287,19 @@ def grammar_from_rule_item(rule_item):
             # From ['<span', 'class=hidden>_disambiguate_template</span>']
             # pick out '_disambiguate_template'
             match = re.fullmatch("[^>]*>(.*)</span>",rule_item[i+1])
-            token = match.group(1)
+            token = match[1]
             i_item = f"$.{token}"
             i += 1
         elif rule_item[i].startswith("<a"):
             # From  ['<a', 'for=syntax_kw', "lt=true>`'true'`</a>"]
             # pick out "true"
             match = re.fullmatch("[^>]*>`'(.*)'`</a>",rule_item[i+2])
-            if match:
-                token = match.group(1)
-            else:
+            if not match:
                 # Now try it without `' '` surrounding the element content text.
                 # From  ['<a', 'for=syntax_sym', "lt=_disam>_disam</a>"]
                 # pick out "_disam"
                 match = re.fullmatch("[^>]*>(.*)</a>",rule_item[i+2])
-                token = match.group(1)
+            token = match[1]
             if token in custom_simple_tokens:
                 token = custom_simple_tokens[token]
                 i_item = f"$.{token}"
@@ -349,13 +345,9 @@ def grammar_from_rule_item(rule_item):
         items.append(i_item)
         i += 1 + i_skip
     if item_choice == True:
-        result = f"choice({', '.join(items)})"
+        return f"choice({', '.join(items)})"
     else:
-        if len(items) == 1:
-            result = items[0]
-        else:
-            result = f"seq({', '.join(items)})"
-    return result
+        return items[0] if len(items) == 1 else f"seq({', '.join(items)})"
 
 
 def grammar_from_rule(key, value):
@@ -383,8 +375,8 @@ class ScanResult(dict):
          The name is taken from the "heading" attriute of the <div> element.
     """
     def __init__(self):
-        self['rule'] = dict()
-        self['example'] = dict()
+        self['rule'] = {}
+        self['example'] = {}
         self['raw'] = []
 
 
@@ -398,7 +390,7 @@ def read_spec(options):
     scanner_lines = read_lines_from_file(
         options.bs_filename, {'wgsl.recursive.bs.include'})
     # Make a *copy* of the text input because we'll filter it later.
-    result['raw'] = [x for x in scanner_lines]
+    result['raw'] = list(scanner_lines)
 
 
     # Skip lines like:
@@ -467,7 +459,8 @@ def read_spec(options):
                     if last_key != None and scanner_span.name() == "example":  # TODO Remove special case
                         if last_key in result[scanner_span.name()]:
                             raise RuntimeError(
-                                "line " + str(scanner_i) + ": example with duplicate name: " + last_key)
+                                f"line {str(scanner_i)}: example with duplicate name: {last_key}"
+                            )
                         else:
                             result[scanner_span.name()][last_key] = []
                     scanner_i += scanner_record_value[-1]
@@ -484,7 +477,13 @@ def read_spec(options):
                         result[scanner_span.name(
                         )][last_key][-1] += scanner_parse[1]
                 else:
-                    if scanner_parse[0] != None:
+                    if scanner_parse[0] is None:
+                        # It's example text
+                        if scanner_parse[1] != None:
+                            last_value = scanner_parse[1]
+                            result[scanner_span.name()][last_key].append(
+                                last_value)
+                    else:
                         # It's a rule, with name in the 0'th position.
                         last_key = scanner_parse[0]
                         if scanner_parse[1] != None:
@@ -501,12 +500,6 @@ def read_spec(options):
                             # Reset
                             last_value = None
                             result[scanner_span.name()][last_key] = []
-                    else:
-                        # It's example text
-                        if scanner_parse[1] != None:
-                            last_value = scanner_parse[1]
-                            result[scanner_span.name()][last_key].append(
-                                last_value)
                     scanner_i += scanner_parse[-1]  # Advance line index
         scanner_i += 1
 
@@ -525,17 +518,14 @@ def flow_extract(options, scan_result):
     print("{}: Extract...".format(options.script))
 
     input_bs_is_fresh = True
-    previously_scanned_bs_file = options.bs_filename + ".pre"
-    if not os.path.exists(options.grammar_filename):
-        # Must regenerate the tree-sitter grammar file
-        pass
-    else:
-        # Check against previously scanned text
-        if os.path.exists(previously_scanned_bs_file):
-            with open(previously_scanned_bs_file,"r") as previous_file:
-                previous_lines = previous_file.readlines()
-                if previous_lines == scan_result['raw']:
-                    input_bs_is_fresh = False
+    previously_scanned_bs_file = f"{options.bs_filename}.pre"
+    if os.path.exists(options.grammar_filename) and os.path.exists(
+        previously_scanned_bs_file
+    ):
+        with open(previously_scanned_bs_file,"r") as previous_file:
+            previous_lines = previous_file.readlines()
+            if previous_lines == scan_result['raw']:
+                input_bs_is_fresh = False
 
     if input_bs_is_fresh:
         rules = scan_result['rule']
@@ -738,10 +728,9 @@ def flow_build(options):
     # Use "npm install" to create the tree-sitter CLI that has WGSL
     # support.  But "npm install" fetches data over the network.
     # That can be flaky, so only invoke it when needed.
-    if os.path.exists("grammar/node_modules/tree-sitter-cli") and os.path.exists("grammar/node_modules/nan"):
-        # "npm install" has been run already.
-        pass
-    else:
+    if not os.path.exists(
+        "grammar/node_modules/tree-sitter-cli"
+    ) or not os.path.exists("grammar/node_modules/nan"):
         subprocess.run(["npm", "install"], cwd=options.grammar_dir, check=True)
     subprocess.run(["npx", "tree-sitter-cli@0.20.7", "generate"],
                    cwd=options.grammar_dir, check=True)
@@ -796,7 +785,7 @@ def flow_examples(options,scan_result):
         options: Options
         scan_result: the ScanResult holding rules and examples extracted from the WGSL spec
     """
-    print("{}: Examples...".format(options.script))
+    print(f"{options.script}: Examples...")
 
     examples = scan_result['example']
     WGSL_LANGUAGE = Language(options.wgsl_shared_lib, "wgsl")
@@ -905,9 +894,8 @@ def main():
         scan_result = read_spec(options)
         if not flow_extract(options,scan_result):
             return 1
-    if 'b' in args.flow:
-        if not flow_build(options):
-            return 1
+    if 'b' in args.flow and not flow_build(options):
+        return 1
     if 'e' in args.flow:
         if scan_result is None:
             scan_result = read_spec(options)

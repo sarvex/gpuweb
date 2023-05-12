@@ -575,7 +575,7 @@ def _g(*args):
   "supertypes": []
 }
 """
-    return "{}{}{}".format(pre,",".join([*args]),post)
+    return f'{pre}{",".join([*args])}{post}'
 
 def _gl(start_symbol,*args):
     s = _g(*args)
@@ -607,11 +607,11 @@ class DragonBook(unittest.TestCase):
 
     def test_Eprime_first(self):
         r = self.g.find("Eprime")
-        self.assertEqual(strset(r.first()), "'+' {}".format(EPSILON))
+        self.assertEqual(strset(r.first()), f"'+' {EPSILON}")
 
     def test_Tprime_first(self):
         r = self.g.find("Tprime")
-        self.assertEqual(strset(r.first()), "'*' {}".format(EPSILON))
+        self.assertEqual(strset(r.first()), f"'*' {EPSILON}")
 
     # Check Follow sets
     def test_E_follow(self):
@@ -676,13 +676,13 @@ class SimpleWgsl_First(unittest.TestCase):
     def test_translation_unit_0_0(self):
         # Can be empty.
         r = self.g.find('translation_unit/0.0')
-        self.assertEqual("';' '@' 'fn' 'type' {}".format(EPSILON),strset(r.first()))
+        self.assertEqual(f"';' '@' 'fn' 'type' {EPSILON}", strset(r.first()))
         self.assertTrue(r.derives_empty())
 
     def test_translation_unit(self):
         # Can be empty.
         r = self.g.find('translation_unit')
-        self.assertEqual("';' '@' 'fn' 'type' {}".format(EPSILON),strset(r.first()))
+        self.assertEqual(f"';' '@' 'fn' 'type' {EPSILON}", strset(r.first()))
         self.assertTrue(r.derives_empty())
 
 
@@ -830,7 +830,7 @@ class Item_Basics(unittest.TestCase):
         it = g.MakeItem("t",t,0)
         self.assertEqual(it.rule, t)
         self.assertEqual(it.position, 0)
-        self.assertEqual(it.items(), [i for i in t])
+        self.assertEqual(it.items(), list(t))
 
     def test_Item_OfSeq_Pos1(self):
         g = _gl("t",_def("t", _seq(_fixed('x'),_sym('blah'))),_def("blah",_fixed("blah")))
@@ -838,7 +838,7 @@ class Item_Basics(unittest.TestCase):
         it = g.MakeItem("t",t,1)
         self.assertEqual(it.rule, t)
         self.assertEqual(it.position, 1)
-        self.assertEqual(it.items(), [i for i in t])
+        self.assertEqual(it.items(), list(t))
 
     def test_Item_OfSeq_Pos2(self):
         g = _gl("t",_def("t", _seq(_fixed('x'),_sym('blah'))),_def("blah",_fixed("blah")))
@@ -846,7 +846,7 @@ class Item_Basics(unittest.TestCase):
         it = g.MakeItem("t",t,2)
         self.assertEqual(it.rule, t)
         self.assertEqual(it.position, 2)
-        self.assertEqual(it.items(), [i for i in t])
+        self.assertEqual(it.items(), list(t))
 
     def test_Item_OfSeq_PosTooSmall(self):
         g = _gl("t",_def("t", _seq(_fixed('x'),_sym('blah'))),_def("blah",_fixed("blah")))
@@ -1295,11 +1295,11 @@ class Lookahead_is_a_set(unittest.TestCase):
 
     def test_init_single(self):
         x = Grammar.LookaheadSet({1})
-        self.assertTrue(x == set({1}))
+        self.assertTrue(x == {1})
 
     def test_init_several(self):
         x = Grammar.LookaheadSet({1,2,9})
-        self.assertTrue(x == set({9,2,1}))
+        self.assertTrue(x == {9, 2, 1})
 
     def test_str_empty(self):
         x = Grammar.LookaheadSet({})
@@ -1596,8 +1596,7 @@ class DragonBook_4_21(unittest.TestCase):
 
         SDef = _def("S", _seq(C,C))
         CDef = _def("C", _choice(_seq(c,C),d))
-        g = _gl("S", SDef, CDef)
-        return g
+        return _gl("S", SDef, CDef)
 
     def test_first(self):
         g = self.toy_grammar()
@@ -1643,8 +1642,7 @@ class DragonBook_4_34(unittest.TestCase):
         EDef = _def("E", _choice(_seq(E,Plus,T),T))
         TDef = _def("T", _choice(_seq(T,Times,F),F))
         FDef = _def("F", _choice(_seq(LParen,E,RParen),Id))
-        g = _gl("E", EDef,TDef,FDef,LParenDef,RParenDef,PlusDef,TimesDef)
-        return g
+        return _gl("E", EDef,TDef,FDef,LParenDef,RParenDef,PlusDef,TimesDef)
 
     def toy_grammar_inline_fixed(self):
         # Like toy_grammar, but fixed tokens are inlined.
@@ -1669,8 +1667,7 @@ class DragonBook_4_34(unittest.TestCase):
         EDef = _def("E", _choice(_seq(E,Plus,T),T))
         TDef = _def("T", _choice(_seq(T,Times,F),F))
         FDef = _def("F", _choice(_seq(LParen,E,RParen),Id))
-        g = _gl("E", EDef,TDef,FDef)
-        return g
+        return _gl("E", EDef,TDef,FDef)
 
     def dont_test_dump(self):
         g = self.toy_grammar()
@@ -1737,13 +1734,9 @@ class RhsIsJustSymbol(unittest.TestCase):
 
         SDef = _def("S",_seq(LBrace,Case,RBrace))
         CaseDef = _def("Case",_seq(E,Colon))
-        if E_as_seq:
-            EDef = _def("E",_seq(R))
-        else:
-            EDef = _def("E",R)
+        EDef = _def("E",_seq(R)) if E_as_seq else _def("E",R)
         RDef = _def("R",_seq(Id,Less,Id))
-        g = _gl("S", SDef,CaseDef,EDef,RDef)
-        return g
+        return _gl("S", SDef,CaseDef,EDef,RDef)
 
     def xtest_dump(self):
         g = self.toy_grammar(True)
@@ -1814,8 +1807,7 @@ class RhsIsChoiceWithASymbolAlternative(unittest.TestCase):
             CaseSelectorDef = _def("CaseSelector",_choice(E,Default))
         EDef = _def("E",_seq(R))
         RDef = _def("R",_seq(Id,Less,Id))
-        g = _gl("S", SDef,CaseDef,CaseSelectorDef,EDef,RDef)
-        return g
+        return _gl("S", SDef,CaseDef,CaseSelectorDef,EDef,RDef)
 
     def xtest_dump(self):
         g = self.toy_grammar(False)

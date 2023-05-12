@@ -106,7 +106,7 @@ class RootNode(ExprNode):
         return self.expr.match(ts_node)
 
     def __str__(self):
-        return "{}( {} )".format(self.kind,str(self.expr))
+        return f"{self.kind}( {str(self.expr)} )"
 
 class DescendantNode(ExprNode):
     """An ExprNode that matches against any descendant of a node"""
@@ -118,7 +118,7 @@ class DescendantNode(ExprNode):
         result = []
         # Stack of treesitter nodes to explore
         stack = list(reversed(ts_node.children))
-        while len(stack) > 0:
+        while stack:
             top = stack.pop()
             top_result = self.expr.match(top)
             if len(top_result) == 0:
@@ -129,7 +129,7 @@ class DescendantNode(ExprNode):
         return result
 
     def __str__(self):
-        return "{}( {} )".format(self.kind,str(self.expr))
+        return f"{self.kind}( {str(self.expr)} )"
 
 class ChildNode(ExprNode):
     """An ExprNode matching against immediate children of a node"""
@@ -144,7 +144,7 @@ class ChildNode(ExprNode):
         return result
 
     def __str__(self):
-        return "{}( {} )".format(self.kind,str(self.expr))
+        return f"{self.kind}( {str(self.expr)} )"
 
 class NamedNode(ExprNode):
     """An ExprNode matching a node for given grammar rule (Treesitter "type")"""
@@ -154,14 +154,10 @@ class NamedNode(ExprNode):
         self.expr = subexpr
 
     def match(self,ts_node):
-        if ts_node.type == self.name:
-            result = self.expr.match(ts_node)
-            return result
-        else:
-            return []
+        return self.expr.match(ts_node) if ts_node.type == self.name else []
 
     def __str__(self):
-        return "{}'{}'( {} )".format(self.kind,self.name,str(self.expr))
+        return f"{self.kind}'{self.name}'( {str(self.expr)} )"
 
 class IndexedChildNode(ExprNode):
     """An ExprNode matching an indexed child of a node"""
@@ -174,7 +170,7 @@ class IndexedChildNode(ExprNode):
         return ts_node.children[self.index:self.index+1]
 
     def __str__(self):
-        return "{}[{}]( {} )".format(self.kind,self.index,str(self.expr))
+        return f"{self.kind}[{self.index}]( {str(self.expr)} )"
 
 class IndexedNode(ExprNode):
     """An ExprNode for an node that must be in a specific position in its parent"""
@@ -187,7 +183,7 @@ class IndexedNode(ExprNode):
         raise Exception("not implemented here!")
 
     def __str__(self):
-        return "{}({})( {} )".format(self.kind,self.index,str(self.expr))
+        return f"{self.kind}({self.index})( {str(self.expr)} )"
 
 class SeqNode(ExprNode):
     """
@@ -226,14 +222,10 @@ class SeqNode(ExprNode):
                 # We matched the current subexpr to this node.
                 iexpr += 1
                 result.extend(here_result)
-        if iexpr == len(self.exprs):
-            # We've matched all expressions
-            return result
-        # Missed matching something
-        return []
+        return result if iexpr == len(self.exprs) else []
 
     def __str__(self):
-        return "{}[{}]".format(self.kind," ".join([str(x) for x in self.exprs]))
+        return f'{self.kind}[{" ".join([str(x) for x in self.exprs])}]'
 
 class OkNode(ExprNode):
     """An ExprNode matching any node"""
@@ -244,7 +236,7 @@ class OkNode(ExprNode):
         return [ts_node]
 
     def __str__(self):
-        return "{}".format(self.kind)
+        return f"{self.kind}"
 
 
 class TSPath:
@@ -282,7 +274,7 @@ class TSPath:
         self.expr = self.parse_from_root(path)
 
     def __str__(self):
-        return "TSPath({} {})".format(self.path,str(self.expr))
+        return f"TSPath({self.path} {str(self.expr)})"
 
     def match(self,parsed_tree):
         """
@@ -309,34 +301,20 @@ class TSPath:
         if path == '':
             return OkNode()
 
-        # Descendant
-        m = re.fullmatch('//(.*)',path)
-        if m:
-            child = self.parse(m.group(1))
-            if isinstance(child,DescendantNode):
-                return child
-            return DescendantNode(child)
+        if m := re.fullmatch('//(.*)', path):
+            child = self.parse(m[1])
+            return child if isinstance(child,DescendantNode) else DescendantNode(child)
+        if m := re.fullmatch('/(.*)', path):
+            return ChildNode(self.parse(m[1]))
 
-        # Child
-        m = re.fullmatch('/(.*)',path)
-        if m:
-            return ChildNode(self.parse(m.group(1)))
+        if m := re.fullmatch('(\d+)(.*)', path):
+            return IndexedNode(int(m[1]), self.parse(m[2]))
 
-        # Indexed
-        # These are only valid inside parens.
-        m = re.fullmatch('(\d+)(.*)',path)
-        if m:
-            return IndexedNode(int(m.group(1)),self.parse(m.group(2)))
+        if m := re.fullmatch('\[(\d+)\](.*)', path):
+            return IndexedChildNode(int(m[1]), self.parse(m[2]))
 
-        # IndexedChild
-        m = re.fullmatch('\[(\d+)\](.*)',path)
-        if m:
-            return IndexedChildNode(int(m.group(1)),self.parse(m.group(2)))
-
-        # Named
-        m = re.fullmatch('(\w+)(.*)',path)
-        if m:
-            return NamedNode(m.group(1),self.parse(m.group(2)))
+        if m := re.fullmatch('(\w+)(.*)', path):
+            return NamedNode(m[1], self.parse(m[2]))
 
         # Parenthesized sequence.
         # If we see
@@ -351,31 +329,26 @@ class TSPath:
                     if depth == 1:
                         part_start = i+1
                 elif (path[i] == ' ') and (depth == 1):
-                    if i == part_start:
-                        # Skip successive spaces
-                        part_start = i+1
-                    else:
+                    if i != part_start:
                         # Parse the term we just finished seeing.
                         path_parts.append(path[part_start:i])
-                        part_start = i+1
+                    # Skip successive spaces
+                    part_start = i+1
                 elif path[i] == ')':
                     depth -= 1
                     if depth == 0:
                         last = i
-                        if i == part_start:
-                            # Skip trailing spaces
-                            pass
-                        else:
+                        if i != part_start:
                             path_parts.append(path[part_start:i])
                         rest = path[i+1:]
                         break
             if rest is None:
-                raise Exception("unbalanced parentheses: {}".format(path))
-            if len(path_parts) < 1:
-                raise Exception("missing terms: {}".format(path[0:last+1]))
+                raise Exception(f"unbalanced parentheses: {path}")
+            if not path_parts:
+                raise Exception(f"missing terms: {path[:last + 1]}")
             return SeqNode([self.parse(p+rest) for p in path_parts])
 
-        raise Exception("unrecognized subpath: '{}'".format(path))
+        raise Exception(f"unrecognized subpath: '{path}'")
 
 class TestTSPathParse(unittest.TestCase):
     def test_parse_from_root_heuristic(self):

@@ -162,16 +162,16 @@ class PrintOption:
         # Maps 'A' to 'B' when A is of the form:
         #   A -> gamma | epsilon
         # Anywhere you want to print 'A', print '(gamma) ?' instead
-        self.replace_with_optional = dict()
+        self.replace_with_optional = {}
         # Maps 'A' to phrase 'gamma' when A is of the form:
         #   A -> gamma A | epsilon
         # Anywhere you want to print 'A', print '(gamma) *' instead
-        self.replace_with_starred = dict()
+        self.replace_with_starred = {}
         # Maps 'A' to phrase 'gamma' when A is of the form:
         #   A -> gamma
         # Anywhere you want to print 'A', print 'gamma' instead
         # Expect this to be populated where gamma is `X | Y`
-        self.replace_with_nested = dict()
+        self.replace_with_nested = {}
 
         # Must be a grammar if either .replace_with_optional or .replace_with_starred
         # are non-empty.
@@ -207,7 +207,7 @@ class Rule(RegisterableObject):
         if self.is_terminal() or self.is_empty():
             if not self.first_data_initialized_for_terminals:
                 # If X is a terminal, then First(X) is {X}
-                self.first_data = set({self})
+                self.first_data = {self}
             self.first_data_initialized_for_terminals = True
         return self.first_data
 
@@ -294,9 +294,7 @@ class Rule(RegisterableObject):
         """Returns a pretty string for a node"""
         if rule.is_terminal() or rule.is_empty():
             content = str(rule)
-            if print_option.bikeshed:
-                return "`{}`".format(content)
-            return content
+            return "`{}`".format(content) if print_option.bikeshed else content
         if rule.is_symbol_name():
             name = rule.content
             def with_meta(phrase,metachar,print_option):
@@ -304,6 +302,7 @@ class Rule(RegisterableObject):
                 if len(phrase) > 1:
                     return "( {} ){}".format(content, metachar)
                 return "{} {}".format(content, metachar)
+
             if name in print_option.replace_with_starred:
                 phrase = print_option.replace_with_starred[name]
                 return with_meta(phrase,'*',print_option)
@@ -332,17 +331,16 @@ class Rule(RegisterableObject):
                     if name == '_disambiguate_template':
                         # This is an implementation detail, so make it invisible.
                         return ''
-                    else:
-                        without_underscore = ['_less_than',
-                                              '_less_than_equal',
-                                              '_greater_than',
-                                              '_greater_than_equal',
-                                              '_shift_left',
-                                              '_shift_left_assign',
-                                              '_shift_right',
-                                              '_shift_right_assign']
-                        if name in without_underscore:
-                            name = name[1:]
+                    without_underscore = ['_less_than',
+                                          '_less_than_equal',
+                                          '_greater_than',
+                                          '_greater_than_equal',
+                                          '_shift_left',
+                                          '_shift_left_assign',
+                                          '_shift_right',
+                                          '_shift_right_assign']
+                    if name in without_underscore:
+                        name = name[1:]
                 return "[={}/{}=]".format(context,name)
             return name
         if isinstance(rule,Choice):
@@ -360,13 +358,9 @@ class Rule(RegisterableObject):
             else:
                 nl = ""
                 prefixer = ""
-            joiner = nl + " | "
-            inside = prefixer + joiner.join([p for p in parts])
-            if print_option.is_canonical:
-                return inside
-            else:
-                # If it's not canonical, then it can have nesting.
-                return "(" + inside + nl + ")"
+            joiner = f"{nl} | "
+            inside = prefixer + joiner.join(list(parts))
+            return inside if print_option.is_canonical else f"({inside}{nl})"
         if isinstance(rule,Seq):
             return " ".join(filter(lambda i: len(i)>0, [i.pretty_str(print_option) for i in rule]))
         if isinstance(rule,Repeat1):
@@ -394,11 +388,10 @@ class Rule(RegisterableObject):
                     start_with_rule.append(x)
                 else:
                     start_with_other_rule.append(x)
+            elif x.is_terminal():
+                start_with_terminal.append(x)
             else:
-                if x.is_terminal():
-                    start_with_terminal.append(x)
-                else:
-                    empties.append(x)
+                empties.append(x)
         return (start_with_rule, start_with_other_rule, start_with_terminal, empties)
 
     def partition_epsilon(self):
@@ -431,7 +424,7 @@ class Rule(RegisterableObject):
             last = phrase[-1]
             if last.is_symbol_name() and last.content == name:
                 # Looks like:   A -> alpha A | empty
-                return phrase[0:-1]
+                return phrase[:-1]
         return None
 
     def as_optional(self):
@@ -498,7 +491,7 @@ class Choice(ContainerRule):
         self.class_id = CLASS_CHOICE
         # Order does not matter among the children.
         # Children must have been registered.
-        self.key = (self.class_id, frozenset([i.reg_info.index for i in children]))
+        self.key = self.class_id, frozenset(i.reg_info.index for i in children)
         super().__init__(children,**kwargs)
 
 class Seq(ContainerRule):
@@ -507,13 +500,13 @@ class Seq(ContainerRule):
         # Order does matter among the children.
         # Store the tuple.
         # Children must have been registered.
-        self.key = (self.class_id, tuple([i.reg_info.index for i in children]))
+        self.key = self.class_id, tuple(i.reg_info.index for i in children)
         super().__init__(children,**kwargs)
 
 class Repeat1(ContainerRule):
     def __init__(self,children,**kwargs):
         if len(children) != 1:
-            raise RuntimeError("Repeat1 must have exactly one child: {}".format(str(children)))
+            raise RuntimeError(f"Repeat1 must have exactly one child: {str(children)}")
         self.class_id = CLASS_REPEAT1
         # Children must have been registered.
         self.key = (self.class_id,children[0].reg_info.index)
@@ -628,7 +621,7 @@ class Shift(Action):
         self.index = item_set.core_index
 
     def __str__(self):
-        return "s#{}".format(self.index)
+        return f"s#{self.index}"
 
     def compare_value(self):
         return (1,self.index)
@@ -659,10 +652,10 @@ class Reduce(Action):
         self.index = index
 
     def __str__(self):
-        return "r#{}".format(self.index)
+        return f"r#{self.index}"
 
     def pretty_str(self):
-        return "r#{} {}".format(self.index,str(self.item))
+        return f"r#{self.index} {str(self.item)}"
 
     def compare_value(self):
         return (2,self.index)
@@ -682,7 +675,7 @@ class Conflict:
         self.action = action
 
     def __str__(self):
-        return "[#{} {}] {} vs. {}".format(self.item_set.core_index,str(self.terminal),self.prev_action.pretty_str(),self.action.pretty_str())
+        return f"[#{self.item_set.core_index} {str(self.terminal)}] {self.prev_action.pretty_str()} vs. {self.action.pretty_str()}"
 
 class LLReduce:
     """
@@ -712,11 +705,11 @@ class LLReduce:
 
     def __str__(self):
         if isinstance(self.rhs,Rule):
-            return "{} -> {}".format(self.A,self.rhs.pretty_str(self.print_option))
-        return "{} -> {}".format(self.A,str(self.rhs))
+            return f"{self.A} -> {self.rhs.pretty_str(self.print_option)}"
+        return f"{self.A} -> {str(self.rhs)}"
 
     def pretty_str(self,options=PrintOption()):
-        return "{} -> {}".format(self.A,self.rhs.pretty_str(options))
+        return f"{self.A} -> {self.rhs.pretty_str(options)}"
 
 @functools.total_ordering
 class Item(RegisterableObject):
@@ -759,10 +752,10 @@ class Item(RegisterableObject):
         elif isinstance(rule, Seq):
             num_items = len(rule)
         else:
-            raise RuntimeError("invalid item object: {}".format(str(rule)))
+            raise RuntimeError(f"invalid item object: {str(rule)}")
 
         if (self.position < 0) or (self.position > num_items):
-            raise RuntimeError("invalid position {} for production: {}".format(position,str(rule)))
+            raise RuntimeError(f"invalid position {position} for production: {str(rule)}")
 
         # Build the item list lazily. We may spend a lot of effort making an Item
         # but immediately throw it away as a duplicate
@@ -843,14 +836,13 @@ class Item(RegisterableObject):
         elif rule.is_empty():
             self.the_items = []
         elif isinstance(rule, Seq):
-            self.the_items = [i for i in rule]
+            self.the_items = list(rule)
         else:
-            raise RuntimeError("invalid item object: {}".format(str(rule)))
+            raise RuntimeError(f"invalid item object: {str(rule)}")
         return self.the_items
 
     def string_internal(self):
-        parts = ["{} ->".format(self.lhs.content)]
-        parts.extend([str(i) for i in self.items()])
+        parts = [f"{self.lhs.content} ->", *[str(i) for i in self.items()]]
         parts.insert(1 + self.position, MIDDLE_DOT)
         return " ".join(parts)
 
@@ -890,7 +882,7 @@ def json_externals(json):
           }
         }
     """
-    return set([ x["name"] for x in json.get("externals",[]) ])
+    return {x["name"] for x in json.get("externals",[])}
 
 
 def json_hook(grammar,memo,tokens_only,dct):
@@ -1063,8 +1055,8 @@ def compute_first_sets(grammar,rules):
     grammar.reset_first_follow()
 
     names_of_non_terminals = []
-    grammar.end_of_text.first_data = set({grammar.end_of_text})
-    grammar.empty.first_data = set({grammar.empty})
+    grammar.end_of_text.first_data = {grammar.end_of_text}
+    grammar.empty.first_data = {grammar.empty}
     for key, rule in rules.items():
         if rule.is_terminal() or rule.is_empty():
             # If X is a terminal, then First(X) is {X}
@@ -1077,7 +1069,7 @@ def compute_first_sets(grammar,rules):
             for rhs in rule:
                 # If X -> empty is a production, then add Empty
                 if rhs.is_empty():
-                    rule.first_data = set({rhs})
+                    rule.first_data = {rhs}
             names_of_non_terminals.append(key)
 
     def lookup(rule):
@@ -1108,7 +1100,7 @@ def compute_first_sets(grammar,rules):
             return rule.first()
         if rule.is_terminal():
             # The terminal isn't registered in the dictionary.
-            return set({rule})
+            return {rule}
         if isinstance(rule,Choice):
             result = rule.first()
             #for item in [lookup(i) for i in rule]:
@@ -1119,10 +1111,7 @@ def compute_first_sets(grammar,rules):
             result = rule.first()
 
             # Only recurse 2 levels deep
-            if depth < 2:
-                items = [lookup(item) for item in rule]
-            else:
-                items = rule
+            items = [lookup(item) for item in rule] if depth < 2 else rule
             # Add the first sets for Yi if all the earlier items can derive
             # empty.  But don't add empty itself from this prefix.
             for item in items:
@@ -1133,7 +1122,7 @@ def compute_first_sets(grammar,rules):
                     # Not known to derive empty. Stop here.
                     break
             # If all the items derive empty, then add Empty to the first set.
-            if all([lookup(item).derives_empty() for item in rule]):
+            if all(lookup(item).derives_empty() for item in rule):
                 result = result.union({grammar.empty})
             return result
         raise RuntimeError("trying to dynamically compute the First set of: "
@@ -1223,7 +1212,7 @@ def compute_follow_sets(grammar):
 
     # 1. Place $ in FOLLOW(S), where S is the start symbol and $ is the input
     # right end marker.
-    grammar.rules[grammar.start_symbol].follow = set({grammar.end_of_text})
+    grammar.rules[grammar.start_symbol].follow = {grammar.end_of_text}
 
     def lookup(rule):
         return grammar.rules[rule.content] if isinstance(rule,SymbolName) else rule
@@ -1255,7 +1244,7 @@ def compute_follow_sets(grammar):
             # If there is a production A -> alpha B beta
             # then everything in First(beta) except Empty is
             # added to Follow(B)
-            beta = seq[bi+1:len(seq)]
+            beta = seq[bi+1:]
             first_beta = first(grammar, beta)
             new_items = without_empty(first_beta) - b.follow
             if len(new_items) > 0:
@@ -1295,12 +1284,13 @@ def compute_follow_sets(grammar):
 
 
 def dump_rule_parts(key,rule):
-    parts = []
-    parts.append("{}  -> {}".format(key,str(rule)))
-    parts.append("{} .reg_info.index: {}".format(key, str(rule.reg_info.index)))
-    parts.append("{} .first: {}".format(key, str(LookaheadSet(rule.first()))))
-    parts.append("{} .derives_empty: {}".format(key, str(rule.derives_empty())))
-    parts.append("{} .follow: {}".format(key, str(LookaheadSet(rule.follow))))
+    parts = [
+        f"{key}  -> {str(rule)}",
+        f"{key} .reg_info.index: {str(rule.reg_info.index)}",
+        f"{key} .first: {str(LookaheadSet(rule.first()))}",
+    ]
+    parts.append(f"{key} .derives_empty: {str(rule.derives_empty())}")
+    parts.append(f"{key} .follow: {str(LookaheadSet(rule.follow))}")
     return parts
 
 def dump_rule(key,rule):
@@ -1317,13 +1307,9 @@ def walk(obj,dict_fn):
     yield the result of calling dict_fn(d).
     """
     if isinstance(obj,dict):
-        result = dict()
-        for key, value in obj.items():
-            result[key] = walk(value, dict_fn)
+        result = {key: walk(value, dict_fn) for key, value in obj.items()}
         return dict_fn(result)
-    if isinstance(obj,list):
-        return [walk(i,dict_fn) for i in obj]
-    return obj
+    return [walk(i,dict_fn) for i in obj] if isinstance(obj,list) else obj
 
 
 class LookaheadSet(set):
@@ -1348,9 +1334,9 @@ class LookaheadSet(set):
 
     def rehash(self):
         """Recomputes self.str and self.hash"""
-        self.str = "{}{}{}".format(LBRACE, " ".join(sorted([str(i) for i in self])), RBRACE)
+        self.str = f'{LBRACE}{" ".join(sorted([str(i) for i in self]))}{RBRACE}'
         self.hash = self.str.__hash__()
-        self.has_end_of_text = any([isinstance(i,EndOfText) for i in self])
+        self.has_end_of_text = any(isinstance(i,EndOfText) for i in self)
 
     def __str__(self):
         if self.str is None:
@@ -1400,7 +1386,7 @@ class ItemSet:
             # Maps source item ID to (next item, lookahead).
             # When    [ A -> alpha . x beta ] is the source item,
             # then    [ A -> alpha x . beta ] is the destination item
-            self.next = dict()
+            self.next = {}
 
             self.next_item_set_cache = None
 
@@ -1423,11 +1409,10 @@ class ItemSet:
             """
             changed = False
             if self.next_item_set_cache is None:
-                # Create the item set from the "next" items and associated lookaheads.
-                d = dict()
-                for item_id, next_and_lookahead in self.next.items():
-                    d[next_and_lookahead[0]] = next_and_lookahead[1]
-
+                d = {
+                    next_and_lookahead[0]: next_and_lookahead[1]
+                    for item_id, next_and_lookahead in self.next.items()
+                }
                 next_IS = ItemSet(grammar,d).close(grammar)
                 if (by_index_memo is None) or (next_IS.core_index not in by_index_memo):
                     self.next_item_set_cache = next_IS
@@ -1442,9 +1427,9 @@ class ItemSet:
         assert isinstance(grammar,Grammar)
         self.grammar = grammar
         # Maps item ID to item
-        self.id_to_item = dict()
+        self.id_to_item = {}
         # Maps item ID to its lookahead
-        self.id_to_lookahead = dict()
+        self.id_to_lookahead = {}
         for item, lookahead in dict(*args).items():
             self.internal_add(item, lookahead)
 
@@ -1478,7 +1463,7 @@ class ItemSet:
         non_kernel_parts = []
         for item_id, lookahead in self.id_to_lookahead.items():
             item = self.id_to_item[item_id]
-            the_str = "{} : {}".format(str(item), str(lookahead))
+            the_str = f"{str(item)} : {str(lookahead)}"
             if item.is_kernel():
                 kernel_parts.append(the_str)
             else:
@@ -1490,14 +1475,14 @@ class ItemSet:
 
     def __str__(self):
         content = self.content_str()
-        return "#{}\n{}".format(self.core_index,content)
+        return f"#{self.core_index}\n{content}"
 
     def short_str(self):
         """
         Returns a short string, based only on core_index.
         Assumes core_index has been computed.
         """
-        return "#{}".format(self.core_index)
+        return f"#{self.core_index}"
 
     def __lt__(self,other):
         # Note: This is slow. Only use this for tests and printing.
@@ -1564,7 +1549,7 @@ class ItemSet:
             # and each terminal b in FIRST(beta a),
             # add [ B -> . gamma, b ] to I if it is not already there.
             work_list = dirty_dict
-            dirty_dict = dict()
+            dirty_dict = {}
             for item_id, lookahead in work_list.items():
                 item = self.id_to_item[item_id]
                 if item.at_end():
@@ -1632,7 +1617,7 @@ class ItemSet:
         # i.e. the symbol immediately to the right of the dot.
         changed_initial = False
         if self.goto is None:
-            self.goto = dict()
+            self.goto = {}
             # Create the initial set of edges, copying lookaheads
             for item_id, item in self.id_to_item.items():
                 if item.at_end():
@@ -1654,27 +1639,20 @@ class ItemSet:
         changed = changed_initial
         for edge in self.goto.values():
             (created, next_item_set) = edge.NextItemSet(grammar,by_index_memo=by_index_memo)
-            if created:
-                next_item_set.close(grammar)
-            else:
+            if not created:
                 # Propagate lookaheads
                 for src_item_id, (dest_item,stale_lookahead) in edge.next.items():
                     src_lookahead = self.id_to_lookahead[src_item_id]
                     dest_lookahead = next_item_set.id_to_lookahead[dest_item.reg_info.index]
                     changed = changed | dest_lookahead.merge(src_lookahead)
-                # Propagate to non-kernel items
-                next_item_set.close(grammar)
-
+            next_item_set.close(grammar)
             changed = changed | created
             goto_list.append((edge.x, next_item_set))
 
         return (changed,goto_list)
 
     def gotos(self,grammar,by_index_memo=None):
-        # TODO(dneto): I'm keeping this indirection as a convenient place
-        # to insert debug output.
-        result = self.gotos_internal(grammar,by_index_memo=by_index_memo)
-        return result
+        return self.gotos_internal(grammar,by_index_memo=by_index_memo)
 
 class ParseTable:
     """
@@ -1697,7 +1675,7 @@ class ParseTable:
         self.reductions = reductions
         self.conflicts = conflicts
 
-        self.core_index_to_state = dict()
+        self.core_index_to_state = {}
         for s in self.states:
             self.core_index_to_state[s.core_index] = s
 
@@ -1708,20 +1686,16 @@ class ParseTable:
         parts = []
         for key, rule in self.grammar.rules.items():
             parts.extend(dump_rule_parts(key,rule))
-        return [ "{}\n".format(str(x)) for x in parts ]
+        return [f"{str(x)}\n" for x in parts]
 
     def states_parts(self):
         parts = []
         for i in self.states:
-            parts.append(str(i))
-            parts.append("\n\n")
+            parts.extend((str(i), "\n\n"))
         return parts
 
     def reductions_parts(self):
-        parts = []
-        for r in self.reductions:
-            parts.append("{}\n".format(r.pretty_str()))
-        return parts
+        return [f"{r.pretty_str()}\n" for r in self.reductions]
 
     def action_parts(self):
         parts = []
@@ -1743,18 +1717,14 @@ class ParseTable:
             short_state = self.core_index_to_state[state_id_nonterminal[0]].short_str()
             nonterminal = str(state_id_nonterminal[1])
             next_state_str = self.goto[state_id_nonterminal].short_str()
-            parts.append("[{} {}]: {}\n".format(short_state,nonterminal,next_state_str))
+            parts.append(f"[{short_state} {nonterminal}]: {next_state_str}\n")
         return parts
 
     def conflict_parts(self):
-        parts = []
-        for c in self.conflicts:
-            parts.append("{}\n".format(str(c)))
-        return parts
+        return [f"{str(c)}\n" for c in self.conflicts]
 
     def all_parts(self):
-        parts = []
-        parts.append("\n=Raw rules:\n")
+        parts = ["\n=Raw rules:\n"]
         parts.extend(self.raw_rule_parts())
         parts.append("\n=LALR1 item sets:\n")
         parts.extend(self.states_parts())
@@ -1765,7 +1735,7 @@ class ParseTable:
         parts.append("\n=Goto:\n")
         parts.extend(self.goto_parts())
         if self.has_conflicts():
-            parts.append("\n=Conflicts: {} conflicts\n".format(len(self.conflicts)))
+            parts.append(f"\n=Conflicts: {len(self.conflicts)} conflicts\n")
             parts.extend(self.conflict_parts())
         return parts
 
@@ -1784,7 +1754,7 @@ class Grammar:
     Rules are either Terminals or Nonterminals.
     """
 
-    def Load(json_text, start_symbol, ignore='_reserved'):
+    def Load(self, start_symbol, ignore='_reserved'):
         """
         Loads a grammar from text.
 
@@ -1800,7 +1770,7 @@ class Grammar:
         Returns:
             A canonical grammar with first and follow sets
         """
-        g = Grammar(json_text, start_symbol, ignore=ignore)
+        g = Grammar(self, start_symbol, ignore=ignore)
         g.canonicalize()
         g.compute_first()
         g.compute_follow()
@@ -1837,7 +1807,7 @@ class Grammar:
         self.end_of_text = EndOfText(reg=self)
 
         # Maps an item set core (ie. no lookaheads) to its sequential index.
-        self.item_set_core_index = dict()
+        self.item_set_core_index = {}
 
         # First decode it without any interpretation.
         pass0 = json.loads(json_text)
@@ -1849,11 +1819,7 @@ class Grammar:
         # The set of external tokens that don't have an ordinary definition in the grammar.
         self.extra_externals = external_tokens - defined_rules
         for e in self.extra_externals:
-            content = "\\u200B{}".format(e)
-            if e == '_disambiguate_template':
-                # This is a zero-width token used for Treesitter's benefit
-                #content = ''
-                pass
+            content = f"\\u200B{e}"
             # Create a placholder definition
             pass0["rules"][e] = {"type":"TOKEN","content":{"type":"PATTERN","value":content}}
 
@@ -2003,12 +1969,11 @@ class Grammar:
                 options = rule.as_container()
                 if len(options) != 2:
                     continue
-                if any([len(x.as_container())!=1 for x in options]):
+                if any(len(x.as_container()) != 1 for x in options):
                     continue
-                if any([(not x.as_container()[0].is_symbol_name()) for x in options]):
-                    continue
-                # Rule looks like   A -> X | Y
-                po.replace_with_nested[name] = rule
+                if all(x.as_container()[0].is_symbol_name() for x in options):
+                    # Rule looks like   A -> X | Y
+                    po.replace_with_nested[name] = rule
 
         parts = []
         for key in sorted(self.rules):
@@ -2024,12 +1989,12 @@ class Grammar:
                 continue
             if (not po.print_terminals) and (key in token_rules):
                 continue
-            space = "" if po.multi_line_choice else " "
             if po.bikeshed:
-                key_content = "  <dfn for='recursive descent syntax'>{}</dfn>".format(key)
-                content = "<div class='syntax' noexport='true'>\n{}:\n{}\n</div>".format(key_content,rule_content)
+                key_content = f"  <dfn for='recursive descent syntax'>{key}</dfn>"
+                content = f"<div class='syntax' noexport='true'>\n{key_content}:\n{rule_content}\n</div>"
             else:
-                content = "{}:{}{}".format(key,space,rule_content)
+                space = "" if po.multi_line_choice else " "
+                content = f"{key}:{space}{rule_content}"
             parts.append(content)
         content = ("\n\n" if po.more_newlines else "\n").join(parts)
         return content
@@ -2058,7 +2023,7 @@ class Grammar:
         """
         result = self.registry.register(registerable)
         if result.reg_info.index is None:
-            raise RuntimeError("failed to register {}".format(str(registerable)))
+            raise RuntimeError(f"failed to register {str(registerable)}")
         return result
 
     def register_string(self,string):
@@ -2079,7 +2044,7 @@ class Grammar:
         worklist = [LANGUAGE]
 
         result = []
-        while len(worklist) > 0:
+        while worklist:
             successors = []
             for rule_name in worklist:
                 if rule_name in visited:
@@ -2121,7 +2086,7 @@ class Grammar:
         # Determine a definite ordering of the rules.
         # Use a DFS so we only have essential backedges.
         preorder_names = self.preorder()
-        preorder_index = dict()
+        preorder_index = {}
         for name in preorder_names:
             preorder_index[name] = len(preorder_index)
 
@@ -2147,11 +2112,15 @@ class Grammar:
                             # Add Aj's alternatives to  Ai's alternatives.
                             # Aj is a choice node
                             # The elements of Aj are already of suitable class.
-                            replacement.extend([delta for delta in Aj])
+                            replacement.extend(list(Aj))
                         else:
                             # Rest is non-empty
-                            for delta in Aj:
-                                replacement.append(self.MakeSeq(list_without_empty(delta.as_container()) + rest))
+                            replacement.extend(
+                                self.MakeSeq(
+                                    list_without_empty(delta.as_container()) + rest
+                                )
+                                for delta in Aj
+                            )
                         changed = True
                     else:
                         # Pass it through. It's not a backedge, or we've been
@@ -2191,9 +2160,9 @@ class Grammar:
         #            A -> beta1 A' | beta2 A' | A'
         #            A' -> alpha1 A' | alpha2 A' | epsilon
         preorder_names = self.preorder()
+        changed = False
         for rule_name in preorder_names:
             rule = self.rules[rule_name]
-            changed = False
             has_immediate_left_recursion =  False
             for rhs in rule.as_container():
                 first = rhs.as_container()[0]
@@ -2202,7 +2171,7 @@ class Grammar:
                     break
             if has_immediate_left_recursion:
                 self_parts = []  # Becomes new right-hand-side for A
-                rest_name = "{}.rest".format(rule_name)
+                rest_name = f"{rule_name}.rest"
                 assert rest_name not in self.rules
                 rest_parts = []  # Becomes new right-hand-side for A'
                 for rhs in rule.as_container():
@@ -2211,14 +2180,16 @@ class Grammar:
                     rest = phrase[1:]
                     if first.is_symbol_name() and first.content is rule_name:
                         rest_parts.append(self.MakeSeq(rest + [self.MakeSymbolName(rest_name)]))
+                    elif len(phrase) > 0 and phrase[0].is_empty():
+                        # beta is epsilon
+                        assert len(phrase) == 1
+                        self_parts.append( self.MakeSymbolName(rest_name) )
                     else:
-                        # TODO: use list_without_empty to shorten this
-                        if len(phrase) > 0 and phrase[0].is_empty():
-                            # beta is epsilon
-                            assert len(phrase) == 1
-                            self_parts.append( self.MakeSymbolName(rest_name) )
-                        else:
-                            self_parts.append( self.MakeSeq([x for x in phrase] + [self.MakeSymbolName(rest_name)]) )
+                        self_parts.append(
+                            self.MakeSeq(
+                                list(phrase) + [self.MakeSymbolName(rest_name)]
+                            )
+                        )
                 rest_parts.append(self.MakeEmpty())
                 self.rules[rule_name] = self.MakeChoice(self_parts)
                 self.rules[rest_name] = self.MakeChoice(rest_parts)
@@ -2247,7 +2218,7 @@ class Grammar:
 
         Remove unreachable rules.
         """
-        name_suffix = ".post.{}".format(target_rule_name)
+        name_suffix = f".post.{target_rule_name}"
 
         # Map a rule name X to a set of rules Y where X appears
         # as a first nonterminal in one of Y's options.
@@ -2263,7 +2234,7 @@ class Grammar:
         po.is_canonical = self.is_canonical
         po.inline_synthetic = False
         candidates = set(self.rules.keys())
-        while len(candidates) > 0:
+        while candidates:
             for A in list(candidates):
                 candidates.remove(A)
                 if A in stop_at_set:
@@ -2273,7 +2244,7 @@ class Grammar:
                 if len(starts) > 0 and (len(others)+len(terms)+len(empties) == 0):
                     #print("processing {}".format(A))
                     # Create the new rule.
-                    new_rule_name = "{}{}".format(A,name_suffix)
+                    new_rule_name = f"{A}{name_suffix}"
                     # Form alpha1 ... alphaN
                     new_options = []
                     for option in rule:
@@ -2304,8 +2275,7 @@ class Grammar:
                         (starts,others,terms,empties) = parent.partition(A)
                         new_options = []
                         for option in starts:
-                            parts = []
-                            parts.append(self.MakeSymbolName(target_rule_name))
+                            parts = [self.MakeSymbolName(target_rule_name)]
                             parts.append(self.MakeSymbolName(new_rule_name))
                             parts.extend(option.as_container()[1:])
                             new_options.append(self.MakeSeq(parts))
@@ -2316,8 +2286,8 @@ class Grammar:
                         # Set up transitive closure.
                         candidates.add(parent_name)
 
-                    #print()
-            #print()
+                                #print()
+                #print()
         #print()
 
         #self.absorb_post(target_rule_name)
@@ -2337,7 +2307,7 @@ class Grammar:
         #
         #   B -> A beta1 | ... | A beta2
         #
-        name_suffix = ".post.{}".format(target_rule_name)
+        name_suffix = f".post.{target_rule_name}"
         for name, rule in self.rules.items():
             (starts,others,terms,empties) = rule.partition(target_rule_name)
             # Each options must start with X
@@ -2345,24 +2315,24 @@ class Grammar:
                 continue
             assert len(starts) > 0
             # Each option must have at least two symbols
-            if any([len(option.as_container()) < 2 for option in starts]):
+            if any(len(option.as_container()) < 2 for option in starts):
                 continue
             # The second element must be the same across all options
-            if len(set([option.as_container()[1].reg_info.index for option in starts])) > 1:
+            if (
+                len({option.as_container()[1].reg_info.index for option in starts})
+                > 1
+            ):
                 continue
             common = starts[0].as_container()[1]
             if not common.is_symbol_name() or common.content.find(name_suffix) < 0:
                 continue
             # Find the 'A' as in 'A.post.X'
-            replace_with_name = common.content[0:common.content.find(name_suffix)]
+            replace_with_name = common.content[:common.content.find(name_suffix)]
             if replace_with_name == name:
                 # Don't create a left-recursion
                 continue
             replace_with = self.MakeSymbolName(replace_with_name)
-            # Rewrite the rule
-            parts = []
-            for option in starts:
-                parts.append(self.MakeSeq([replace_with] + option[2:]))
+            parts = [self.MakeSeq([replace_with] + option[2:]) for option in starts]
             self.rules[name] = self.MakeChoice(parts)
         self.remove_unused_rules()
 
@@ -2387,7 +2357,7 @@ class Grammar:
 
         has_empty = set()
         # Map a rule name to the rule name it should be replaced by.
-        replacement = dict()
+        replacement = {}
 
         for A in reversed(self.preorder()):
             A_rule = self.rules[A]
@@ -2431,9 +2401,9 @@ class Grammar:
         """
 
         # Map an object index to the nonterminal that first defines it.
-        index_to_name = dict()
+        index_to_name = {}
         # Map a rule name to the rule name it should be replaced by.
-        replacement = dict()
+        replacement = {}
 
         def process_replacement(grammar,name,replacement_dict):
             # Update this rule with any scheduled replacements.
@@ -2483,7 +2453,7 @@ class Grammar:
         """
 
         # Map a rule name to the phrase it should be replaced with.
-        replacement = dict()
+        replacement = {}
 
         # Needed for computing follow sets
         excepting_set = set(excepting_set) | {self.start_symbol}
@@ -2495,7 +2465,7 @@ class Grammar:
                 # There is only one option in the choice
                 rhs = A_rule[0].as_container()
                 # Skip inlining token definitions.
-                if any([x.is_symbol_name() for x in rhs]):
+                if any(x.is_symbol_name() for x in rhs):
                     replacement[A] = rhs
 
             # Update this rule with any scheduled replacements.
@@ -2528,7 +2498,7 @@ class Grammar:
         """
 
         # Map a rule name to the phrase it should be replaced with.
-        replacement = dict()
+        replacement = {}
 
         # Process descendants first
         for A in reversed(self.preorder()):
@@ -2567,7 +2537,7 @@ class Grammar:
         """
 
         # Map a rule name to the phrase it should be replaced with.
-        replacement = dict()
+        replacement = {}
 
         # Process descendants first
         for A in reversed(self.preorder()):
@@ -2614,7 +2584,7 @@ class Grammar:
         """
 
         # Map a rule name to the phrase it should be replaced with.
-        replacement = dict()
+        replacement = {}
 
         # Process descendants first
         for A in reversed(self.preorder()):
@@ -2630,8 +2600,8 @@ class Grammar:
                 first = option_parts[0]
                 if first.is_symbol_name() and first.content in replacement:
                     for repl_option in replacement[first.content]:
-                        parts = [x for x in repl_option.as_container()]
-                        parts = parts + option_parts[1:]
+                        parts = list(repl_option.as_container())
+                        parts += option_parts[1:]
                         new_options.append(self.MakeSeq(parts))
                     changed_rule = True
                 else:
@@ -2651,7 +2621,7 @@ class Grammar:
             X -> POST X.post.POST
         """
         for name in list(self.rules):
-            related_post = "{}.post.{}".format(name,post_name)
+            related_post = f"{name}.post.{post_name}"
             if related_post in self.rules:
                 parts = [self.MakeSymbolName(x) for x in [post_name, related_post]]
                 self.rules[name] = self.MakeChoice([self.MakeSeq(parts)])
@@ -2764,19 +2734,19 @@ class Grammar:
         for name in self.rules:
             changed_rule = False
             new_options = []
-            for raw_option in [x for x in self.rules[name].as_container()]:
+            for raw_option in list(self.rules[name].as_container()):
                 option = raw_option.as_container()
                 keep_going = True
                 while keep_going:
                     keep_going = False
                     # See if we can rotate option[pivot] with what follows it.
                     for ipivot in range(0,len(option)-1):
-                        (prefix,pivot,rest) = (option[0:ipivot],option[ipivot],option[ipivot+1:])
+                        (prefix,pivot,rest) = option[:ipivot], option[ipivot], option[ipivot+1:]
                         if pivot.is_symbol_name():
                             pivot_as_starred = self.rules[pivot.content].as_starred(pivot.content)
                             if pivot_as_starred is None:
                                 continue
-                            rest_prefix = rest[0:len(pivot_as_starred)]
+                            rest_prefix = rest[:len(pivot_as_starred)]
                             rest_tail = rest[len(pivot_as_starred):]
                             # Compare keys
                             pivot_keys = [x.reg_info.index for x in pivot_as_starred]
@@ -2810,7 +2780,7 @@ class Grammar:
         """
 
         conflicts = []
-        table = dict()
+        table = {}
         def add(lhs,terminal,action):
             action_key = (lhs,terminal)
             if action_key in table:

@@ -51,12 +51,12 @@ class Case:
 
     def __str__(self):
         expectation = "expect_pass" if self.expect_pass else "expect_fail"
-        return "Case:{}:{}\n---\n{}\n---".format(expectation,self.name,self.text)
+        return f"Case:{expectation}:{self.name}\n---\n{self.text}\n---"
 
     def run(self,parser):
         tree = parser.parse(bytes(self.text,"utf8"))
         if self.expect_pass == tree.root_node.has_error:
-            return (False,"parsing failed: {}".format(tree.root_node.sexp()))
+            return False, f"parsing failed: {tree.root_node.sexp()}"
         return (True,tree)
 
 class XFail(Case):
@@ -73,9 +73,12 @@ class MatchCase(Case):
         (ok,tree) = super().run(parser)
         if ok:
             matched_nodes = self.path.match(tree)
-            got = " ".join(["{}:{}".format(x.type,x.text.decode("utf-8")) for x in matched_nodes])
+            got = " ".join([f'{x.type}:{x.text.decode("utf-8")}' for x in matched_nodes])
             if got != self.expect:
-                return (False, "\n{}\nexpect {}\ngot    {}\nin {}".format(str(self.path),self.expect,got,tree.root_node.sexp()))
+                return (
+                    False,
+                    f"\n{str(self.path)}\nexpect {self.expect}\ngot    {got}\nin {tree.root_node.sexp()}",
+                )
         return (ok,tree)
 
 def GetCases():
@@ -107,7 +110,7 @@ def run_tests(options):
     parser = Parser()
     parser.set_language(language)
 
-    print("{}: ".format(SCRIPT),flush=True,end='')
+    print(f"{SCRIPT}: ", flush=True, end='')
 
     num_cases = 0
     num_errors = 0
@@ -122,7 +125,7 @@ def run_tests(options):
             print("FAIL:", case, err)
             print("---Case end\n",flush=True)
 
-    print("{} pass {} fail ".format(num_cases-num_errors,num_errors),flush=True)
+    print(f"{num_cases - num_errors} pass {num_errors} fail ", flush=True)
 
     return num_errors == 0
 
@@ -141,9 +144,7 @@ def main():
     options = Options(args.parser)
     options.verbose = args.verbose
 
-    if not run_tests(options):
-        return 1
-    return 0
+    return 1 if not run_tests(options) else 0
 
 
 if __name__ == '__main__':

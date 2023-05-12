@@ -104,12 +104,12 @@ class ObjectRegistry:
 
     def __init__(self):
         # Maps an object key to the object with that key
-        self.key_to_object = dict()
+        self.key_to_object = {}
         # Maps an object's index to the object
-        self.index_to_object = dict()
+        self.index_to_object = {}
 
         # Maps strings to unique integers
-        self.str_to_id = dict()
+        self.str_to_id = {}
 
     def register_string(self,string):
         assert isinstance(string,str)
@@ -150,9 +150,7 @@ class ObjectRegistry:
 
     def __str__(self):
         objects = sorted(self.key_to_object.values(), key = lambda o: o.reg_info.index)
-        parts = []
-        parts.append("<ObjectRegistry>\n")
-        for o in objects:
-            parts.append(" {} {}\n".format(o.reg_info.index, str(o)))
+        parts = ["<ObjectRegistry>\n"]
+        parts.extend(f" {o.reg_info.index} {str(o)}\n" for o in objects)
         parts.append("</ObjectRegistry>\n")
         return "".join(parts)

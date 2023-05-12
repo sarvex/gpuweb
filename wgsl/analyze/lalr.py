@@ -114,8 +114,8 @@ def main():
 
         g.epsilon_refactor()
 
-        inline_stop = {'ident','member_ident','ident_pattern_token','optionally_typed_ident'}
         if args.aggressive:
+            inline_stop = {'ident','member_ident','ident_pattern_token','optionally_typed_ident'}
             g.inline_single_choice_with_nonterminal(inline_stop)
             g.dedup_rhs(inline_stop)
             g.inline_single_choice_with_nonterminal(inline_stop)
@@ -154,7 +154,7 @@ def main():
     if args.lr:
         lr1_itemsets = g.LR1_ItemSets()
         for IS in lr1_itemsets:
-            print("\n{}".format(str(IS)))
+            print(f"\n{str(IS)}")
         sys.exit(0)
 
     elif args.ll:
@@ -163,18 +163,16 @@ def main():
 
         for key, reduction in table.items():
             (non_terminal,token) = key
-            print("{} {}: {}".format(non_terminal,str(token),str(reduction)))
+            print(f"{non_terminal} {str(token)}: {str(reduction)}")
 
         for (lhs,terminal,action,action2) in conflicts:
-            print("conflict: {}->{}: {}  {}".format(lhs,terminal,action,action2))
+            print(f"conflict: {lhs}->{terminal}: {action}  {action2}")
         if len(conflicts) > 0:
             sys.exit(1)
-    else:
-        if args.verbose:
-            g.dump()
-        else:
-            if not printed:
-                print(g.pretty_str(po))
+    elif args.verbose:
+        g.dump()
+    elif not printed:
+        print(g.pretty_str(po))
 
     sys.exit(0)
 

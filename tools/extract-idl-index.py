@@ -41,9 +41,8 @@ class IDLIndexPrinter(HTMLParser):
                 self.search_state = 2
 
     def handle_endtag(self, tag):
-        if self.search_state == 2:
-            if tag == 'pre':
-                self.search_state = 3
+        if self.search_state == 2 and tag == 'pre':
+            self.search_state = 3
 
     def handle_data(self, data):
         if self.search_state == 2:
